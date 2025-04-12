@@ -13,7 +13,7 @@ if not GEMINI_API_KEY:
 
 # Configure the Gemini model
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-pro")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Home route
 @app.route("/")
@@ -34,13 +34,14 @@ def chat():
         return jsonify({"reply": "Please enter a message!"}), 400
 
     try:
-        # Attempt to generate reply from Gemini using the correct method
-        response = model.generate_content(
-            query=message,  # Try using 'query' instead of 'prompt'
-            instructions="You are PyBot, a helpful assistant developed by AEVIX. Always respond in a clear, concise, and friendly way."
+        # Generate reply from Gemini using the correct model and method
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",  # Use gemini-2.0-flash model
+            contents=message  # Use 'contents' as the argument name
         )
 
         return jsonify({"reply": response.text})
+
     except Exception as e:
         return jsonify({"reply": f"⚠︎ Error talking to server: {str(e)}"}), 500
 
