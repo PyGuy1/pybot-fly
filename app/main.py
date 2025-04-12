@@ -1,10 +1,15 @@
+import os
+import secrets
 from flask import Flask, request, jsonify
 import google.generativeai as genai
-import os
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
+
+# Automatically generate SECRET_KEY if not set
+if not app.config.get('SECRET_KEY'):
+    app.config['SECRET_KEY'] = secrets.token_hex(16)
 
 # Get Gemini API key from environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -32,18 +37,10 @@ def chat():
     if not message:
         return jsonify({"reply": "Please enter a message!"}), 400
 
-    # Define custom instructions for the model's behavior
-    custom_instructions = """
-    You are PyBot, a helpful assistant developed by PyGuy. 
-    Always respond in a clear, concise, and friendly manner.
-    Keep your responses informative but simple, avoiding unnecessary complexity.
-    """
-
     try:
-        # Generate reply from Gemini with custom instructions
+        # Generate reply from Gemini using the correct method
         response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
-            contents=message,  # The message from the user
-            instructions=custom_instructions  # Pass the custom instructions
+            contents=message  # Use 'contents' as the argument name
         )
 
         return jsonify({"reply": response.text})
