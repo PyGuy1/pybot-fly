@@ -6,7 +6,9 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-GEMINI_API_KEY = AIzaSyD9kVgFrHZSiBxP6PMHCYhUo0u95mRdNkA
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not set!")
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-pro")
@@ -25,9 +27,13 @@ def chat():
     message = data.get("message", "")
     if not message:
         return jsonify({"reply": "Please enter a message!"}), 400
-    response = model.generate_content(message)
+
+    response = model.generate_content(
+        message,
+        system_instruction="You are PyBot, a helpful assistant developed by PyGuy. Always provide clear, concise, and friendly responses."
+    )
+
     return jsonify({"reply": response.text})
 
-# Run the app without manually specifying a port
 if __name__ == "__main__":
     app.run(host="0.0.0.0")
