@@ -1,6 +1,6 @@
 import os
 import secrets
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 import google.generativeai as genai
 from flask_cors import CORS
 
@@ -18,6 +18,10 @@ if not GEMINI_API_KEY:
 
 # Configure the Gemini model with the correct API key
 genai.configure(api_key=GEMINI_API_KEY)
+
+# Initialize conversation history in session
+if 'conversation_history' not in session:
+    session['conversation_history'] = []
 
 # Home route
 @app.route("/")
@@ -38,11 +42,23 @@ def chat():
         return jsonify({"reply": "Please enter a message!"}), 400
 
     try:
+        # Add user message to conversation history
+        session['conversation_history'].append(f"User: {message}")
+        
+        # Combine conversation history into a single prompt
+        prompt = "You are PyBot, a helpful assistant developed by PyGuy. Always respond in a clear, concise, and friendly manner.\n"
+        prompt += "\n".join(session['conversation_history'])  # Add history for context
+        prompt += f"\nUser: {message}\nAssistant:"
+
         # Generate reply from Gemini using the correct method
         response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
-            contents=message  # Use 'contents' as the argument name
+            contents=prompt  # Send prompt with instructions and conversation context
         )
 
+        # Add the assistant's response to conversation history
+        session['conversation_history'].append(f"Assistant: {response.text}")
+
+        # Return the response
         return jsonify({"reply": response.text})
 
     except Exception as e:
