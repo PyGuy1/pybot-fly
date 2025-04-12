@@ -11,9 +11,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY is not set!")
 
-# Configure the Gemini model
+# Configure the Gemini model with the correct API key
 genai.configure(api_key=GEMINI_API_KEY)
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Home route
 @app.route("/")
@@ -34,9 +33,8 @@ def chat():
         return jsonify({"reply": "Please enter a message!"}), 400
 
     try:
-        # Generate reply from Gemini using the correct model and method
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",  # Use gemini-2.0-flash model
+        # Generate reply from Gemini using the correct method
+        response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
             contents=message  # Use 'contents' as the argument name
         )
 
