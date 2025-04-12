@@ -1,29 +1,26 @@
-import os
-import secrets
 from flask import Flask, request, jsonify, session
 import google.generativeai as genai
+import os
+import secrets  # For generating a random secret key
 from flask_cors import CORS
-from flask_session import Session  # Import Flask-Session
+from flask_session import Session
 
 app = Flask(__name__)
 CORS(app)
 
-# Automatically generate SECRET_KEY if not set
-if not app.config.get('SECRET_KEY'):
-    app.config['SECRET_KEY'] = secrets.token_hex(16)
+# Auto-generate a random secret key if not set in environment variable
+app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(24))
 
-# Set up server-side session storage
-app.config['SESSION_TYPE'] = 'filesystem'  # This uses the filesystem to store sessions
-app.config['SESSION_PERMANENT'] = False  # Sessions are not permanent by default
-app.config['SESSION_USE_SIGNER'] = True  # Sign the session data for security
-Session(app)  # Initialize Flask-Session
+# Use flask-session to store session data
+app.config["SESSION_TYPE"] = "filesystem"  # or "redis" if you want a persistent store
+Session(app)
 
 # Get Gemini API key from environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY is not set!")
 
-# Configure the Gemini model with the correct API key
+# Configure the Gemini model
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Home route
@@ -39,33 +36,27 @@ def ping():
 # Chat route
 @app.route("/chat", methods=["POST"])
 def chat():
-    # Initialize conversation history in session if not already set
-    if 'conversation_history' not in session:
-        session['conversation_history'] = []
-
     data = request.get_json()
     message = data.get("message", "")
     if not message:
         return jsonify({"reply": "Please enter a message!"}), 400
 
-    try:
-        # Add user message to conversation history
-        session['conversation_history'].append(f"User: {message}")
-        
-        # Combine conversation history into a single prompt
-        prompt = "You are PyBot, a helpful assistant developed by PyGuy. Always respond in a clear, concise, and friendly manner.\n"
-        prompt += "\n".join(session['conversation_history'])  # Add history for context
-        prompt += f"\nUser: {message}\nAssistant:"
+    # Initialize conversation history if it doesn't exist
+    if "conversation_history" not in session:
+        session["conversation_history"] = []
 
-        # Generate reply from Gemini using the correct method
+    # Add the current message to the conversation history
+    session["conversation_history"].append({"role": "user", "message": message})
+
+    try:
+        # Generate reply from Gemini using the conversation history
         response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
-            contents=prompt  # Send prompt with instructions and conversation context
+            contents=session["conversation_history"]
         )
 
-        # Add the assistant's response to conversation history
-        session['conversation_history'].append(f"Assistant: {response.text}")
+        # Add the bot's response to the conversation history
+        session["conversation_history"].append({"role": "bot", "message": response.text})
 
-        # Return the response
         return jsonify({"reply": response.text})
 
     except Exception as e:
