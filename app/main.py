@@ -19,10 +19,6 @@ if not GEMINI_API_KEY:
 # Configure the Gemini model with the correct API key
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Initialize conversation history in session
-if 'conversation_history' not in session:
-    session['conversation_history'] = []
-
 # Home route
 @app.route("/")
 def home():
@@ -36,6 +32,10 @@ def ping():
 # Chat route
 @app.route("/chat", methods=["POST"])
 def chat():
+    # Initialize conversation history in session if not already set
+    if 'conversation_history' not in session:
+        session['conversation_history'] = []
+
     data = request.get_json()
     message = data.get("message", "")
     if not message:
