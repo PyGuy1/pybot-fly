@@ -3,6 +3,7 @@ import secrets
 from flask import Flask, request, jsonify, session
 import google.generativeai as genai
 from flask_cors import CORS
+from flask_session import Session  # Import Flask-Session
 
 app = Flask(__name__)
 CORS(app)
@@ -10,6 +11,12 @@ CORS(app)
 # Automatically generate SECRET_KEY if not set
 if not app.config.get('SECRET_KEY'):
     app.config['SECRET_KEY'] = secrets.token_hex(16)
+
+# Set up server-side session storage
+app.config['SESSION_TYPE'] = 'filesystem'  # This uses the filesystem to store sessions
+app.config['SESSION_PERMANENT'] = False  # Sessions are not permanent by default
+app.config['SESSION_USE_SIGNER'] = True  # Sign the session data for security
+Session(app)  # Initialize Flask-Session
 
 # Get Gemini API key from environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
