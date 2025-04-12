@@ -46,16 +46,21 @@ def chat():
         session["conversation_history"] = []
 
     # Add the current message to the conversation history
-    session["conversation_history"].append({"role": "user", "message": message})
+    session["conversation_history"].append({"role": "user", "text": message})
 
     try:
+        # Prepare the conversation history in the expected format
+        content = {
+            "parts": [{"text": message}]
+        }
+
         # Generate reply from Gemini using the conversation history
         response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
-            contents=session["conversation_history"]
+            contents=content
         )
 
         # Add the bot's response to the conversation history
-        session["conversation_history"].append({"role": "bot", "message": response.text})
+        session["conversation_history"].append({"role": "bot", "text": response.text})
 
         return jsonify({"reply": response.text})
 
