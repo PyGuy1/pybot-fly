@@ -32,10 +32,18 @@ def chat():
     if not message:
         return jsonify({"reply": "Please enter a message!"}), 400
 
+    # Define custom instructions for the model's behavior
+    custom_instructions = """
+    You are PyBot, a helpful assistant developed by PyGuy. 
+    Always respond in a clear, concise, and friendly manner.
+    Keep your responses informative but simple, avoiding unnecessary complexity.
+    """
+
     try:
-        # Generate reply from Gemini using the correct method
+        # Generate reply from Gemini with custom instructions
         response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
-            contents=message  # Use 'contents' as the argument name
+            contents=message,  # The message from the user
+            instructions=custom_instructions  # Pass the custom instructions
         )
 
         return jsonify({"reply": response.text})
