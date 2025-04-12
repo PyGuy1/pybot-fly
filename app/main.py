@@ -33,13 +33,16 @@ def chat():
     if not message:
         return jsonify({"reply": "Please enter a message!"}), 400
 
-    # Generate reply from Gemini with the correct parameters
-    response = model.generate_content(
-        prompt=message,  # Adjust to correct parameter for prompt
-        instructions="You are PyBot, a helpful assistant developed by AEVIX. Always respond in a clear, concise, and friendly way."  # Adjust if needed
-    )
+    try:
+        # Attempt to generate reply from Gemini using the correct method
+        response = model.generate_content(
+            query=message,  # Try using 'query' instead of 'prompt'
+            instructions="You are PyBot, a helpful assistant developed by AEVIX. Always respond in a clear, concise, and friendly way."
+        )
 
-    return jsonify({"reply": response.text})
+        return jsonify({"reply": response.text})
+    except Exception as e:
+        return jsonify({"reply": f"⚠︎ Error talking to server: {str(e)}"}), 500
 
 # Run the app
 if __name__ == "__main__":
