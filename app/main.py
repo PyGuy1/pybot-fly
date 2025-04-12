@@ -45,18 +45,24 @@ def chat():
     if "conversation_history" not in session:
         session["conversation_history"] = []
 
-    # Add the current message to the conversation history
+    # Add the user's message to the conversation history
     session["conversation_history"].append({"role": "user", "text": message})
 
-    try:
-        # Prepare the conversation history in the expected format
-        content = {
-            "parts": [{"text": message}]
-        }
+    # Instruction for the Gemini model
+    instructions = "You are PyBot, a helpful assistant developed by PyGuy. Always respond in a clear, concise, and friendly manner. Keep your responses informative but simple, avoiding unnecessary complexity."
 
-        # Generate reply from Gemini using the conversation history
+    try:
+        # Prepare the conversation history and instructions
+        conversation_history = session["conversation_history"]
+        conversation_history_str = "\n".join([f"{entry['role']}: {entry['text']}" for entry in conversation_history])
+
+        # Generate content using the Gemini API with instructions and history
         response = genai.GenerativeModel("gemini-2.0-flash").generate_content(
-            contents=content
+            contents=[
+                {"text": instructions},  # Add the instructions
+                {"text": conversation_history_str},  # Add the conversation history
+                {"text": message}  # Add the current message from the user
+            ]
         )
 
         # Add the bot's response to the conversation history
