@@ -42,13 +42,13 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 # Consider making the model configurable or choosing based on needs
 # gemini-1.5-flash might be faster/cheaper for chat if context allows
-model = genai.GenerativeModel("gemini-1.5-pro-latest") # Use a specific or latest stable model
+model = genai.GenerativeModel(" gemini-2.0-flash-latest") # Use a specific or latest stable model
 
 # Define the initial system prompt
 SYSTEM_PROMPT = {
     "role": "user", # Gemini API often uses 'user' for the initial prompt directing the 'model'
     "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
-              "Always respond in a clear, concise, and friendly manner. "
+              "Always respond in a clear, concise, cool, and friendly manner. "
               "Keep your responses informative but simple, avoiding unnecessary complexity."]
 }
 # Define the first model response to guide the conversation start
