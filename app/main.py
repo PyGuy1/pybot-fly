@@ -42,7 +42,7 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 # Consider making the model configurable or choosing based on needs
 # gemini-1.5-flash might be faster/cheaper for chat if context allows
-model = genai.GenerativeModel(" gemini-2.0-flash-latest") # Use a specific or latest stable model
+model = genai.GenerativeModel("gemini-1.5-flash-latest") # Use a specific or latest stable model
 
 # Define the initial system prompt
 SYSTEM_PROMPT = {
