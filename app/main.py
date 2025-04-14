@@ -19,6 +19,7 @@ app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = instance_path
 app.config["SESSION_PERMANENT"] = True
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
+
 if app.secret_key == secrets.token_hex(16):
     logging.warning("FLASK_SECRET_KEY not set, using temporary secret key. Sessions may not persist across restarts.")
 
@@ -32,7 +33,7 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-# Initial instructions
+# Initial instructions and system prompt
 SYSTEM_PROMPT = {
     "role": "user",
     "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
@@ -63,16 +64,17 @@ def chat():
         logging.info(f"Initializing session history.")
         session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
 
-    # Add user's message
+    # Add user's message to history
     session["history"].append({"role": "user", "parts": [message]})
 
-    # Limit history length
+    # Limit the history length to avoid exceeding token limits
     MAX_HISTORY_TURNS = 10
     base_length = len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
     if len(session["history"]) > base_length + MAX_HISTORY_TURNS * 2:
         session["history"] = session["history"][:base_length] + session["history"][-MAX_HISTORY_TURNS * 2:]
 
     try:
+        # Generate response using Gemini API
         response = model.generate_content(contents=session["history"])
 
         if not response.parts:
