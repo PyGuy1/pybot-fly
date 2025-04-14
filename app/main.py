@@ -1,96 +1,99 @@
 from flask import Flask, request, jsonify, session
-from flask_cors import CORS
-from flask_session import Session
 import google.generativeai as genai
 import os
 import secrets
-import logging
-
-# Logging setup
-logging.basicConfig(level=logging.INFO)
+from flask_cors import CORS
+from flask_session import Session
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+CORS(app)
 
-# Session config
-instance_path = os.path.join(app.instance_path, 'flask_session')
-os.makedirs(instance_path, exist_ok=True)
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_FILE_DIR"] = instance_path
-app.config["SESSION_PERMANENT"] = True
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
+# Auto-generate a random secret key if not set in environment variable
+app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(24))
 
-if app.secret_key == secrets.token_hex(16):
-    logging.warning("FLASK_SECRET_KEY not set, using temporary secret key. Sessions may not persist across restarts.")
-
+# Use flask-session to store session data
+app.config["SESSION_TYPE"] = "filesystem"  # or "redis" if you want a persistent store
 Session(app)
 
-# Gemini API config
+# Get Gemini API key from environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set!")
+    raise ValueError("GEMINI_API_KEY is not set!")
 
+# Configure the Gemini model
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
 
-# Initial instructions and system prompt
-SYSTEM_PROMPT = {
-    "role": "user",
-    "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
-              "Always respond in a clear, concise, cool, and friendly manner. "
-              "Keep your responses informative but simple, avoiding unnecessary complexity."]
-}
-INITIAL_MODEL_RESPONSE = {
-    "role": "model",
-    "parts": ["Okay, I understand. I'm PyBot, ready to help! How can I assist you today?"]
-}
+# Initialize the Gemini model with the proper version (ensure you include the version suffix)
+MODEL_NAME = "gemini-1.5-flash-001"
 
+# Home route
+@app.route("/")
+def home():
+    return "PyBot is running at https://pybot-fly.onrender.com"
+
+# Ping route
+@app.route("/ping")
+def ping():
+    return "pong"
+
+# Cache creation route
+def create_cache(conversation_history):
+    """Create a cache for context storage"""
+    try:
+        cache = genai.caches.create(
+            model=MODEL_NAME,
+            config=genai.types.CreateCachedContentConfig(
+                display_name='chat-session-cache',  # Cache identifier
+                system_instruction="You are a helpful assistant. Respond in a clear and concise manner.",
+                contents=conversation_history,
+                ttl="3600s",  # Cache will expire in 1 hour
+            )
+        )
+        return cache
+    except Exception as e:
+        print(f"Error creating cache: {str(e)}")
+        return None
+
+# Chat route
 @app.route("/chat", methods=["POST"])
 def chat():
-    logging.info(f"Chat request received. Session ID: {session.sid if session else 'No Session'}")
-
     data = request.get_json()
-    if not data or "message" not in data:
-        logging.warning("Chat request missing 'message' field.")
-        return jsonify({"reply": "Request body must be JSON with a 'message' field."}), 400
-
-    message = data["message"].strip()
+    message = data.get("message", "")
     if not message:
-        logging.warning("Chat request received empty 'message'.")
-        return jsonify({"reply": "Please enter a non-empty message!"}), 400
+        return jsonify({"reply": "Please enter a message!"}), 400
 
-    # Initialize or reset session history
-    if "history" not in session or not isinstance(session["history"], list):
-        logging.info(f"Initializing session history.")
-        session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
+    # Initialize conversation history if it doesn't exist
+    if "conversation_history" not in session:
+        session["conversation_history"] = []
 
-    # Add user's message to history
-    session["history"].append({"role": "user", "parts": [message]})
+    # Add the user's message to the conversation history
+    session["conversation_history"].append({"role": "user", "text": message})
 
-    # Limit the history length to avoid exceeding token limits
-    MAX_HISTORY_TURNS = 10
-    base_length = len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
-    if len(session["history"]) > base_length + MAX_HISTORY_TURNS * 2:
-        session["history"] = session["history"][:base_length] + session["history"][-MAX_HISTORY_TURNS * 2:]
+    # Create or fetch the cache based on the conversation history
+    cache = create_cache(session["conversation_history"])
 
+    if not cache:
+        return jsonify({"reply": "⚠️ Failed to create cache for the conversation. Try again later."}), 500
+
+    # Use the cache for context in the request
     try:
-        # Generate response using Gemini API
-        response = model.generate_content(contents=session["history"])
+        response = genai.models.generate_content(
+            model=MODEL_NAME,
+            contents=[
+                {"text": "You are PyBot, a helpful assistant."},  # Instructions for the assistant
+                {"text": message},  # Current user message
+            ],
+            config=genai.types.GenerateContentConfig(cached_content=cache.name)  # Use the cached content
+        )
 
-        if not response.parts:
-            logging.warning(f"Empty response from Gemini.")
-            return jsonify({"reply": "⚠️ I received an empty response from the AI. Please try again."}), 500
+        # Add the bot's response to the conversation history
+        session["conversation_history"].append({"role": "bot", "text": response.text})
 
-        reply = response.text.strip()
-        session["history"].append({"role": "model", "parts": [reply]})
-        session.modified = True
-
-        logging.info("Reply successfully generated.")
-        return jsonify({"reply": reply})
+        return jsonify({"reply": response.text})
 
     except Exception as e:
-        logging.error(f"Gemini API error: {str(e)}", exc_info=True)
-        return jsonify({"reply": "⚠️ Error communicating with the AI service. Please try again later."}), 500
+        return jsonify({"reply": f"⚠️ Error talking to server: {str(e)}"}), 500
 
+# Run the app
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
