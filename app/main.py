@@ -11,14 +11,14 @@ import time
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)  # Ensure supports_credentials=True if your frontend needs to send cookies
+CORS(app, supports_credentials=True)  # Enable cross-origin cookies for session tracking
 
 # --- Session Configuration ---
 instance_path = os.path.join(app.instance_path, 'flask_session')
-os.makedirs(instance_path, exist_ok=True)  # Ensure the directory exists
+os.makedirs(instance_path, exist_ok=True)
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = instance_path
-app.config["SESSION_PERMANENT"] = True  # Make sessions permanent until they expire
+app.config["SESSION_PERMANENT"] = True
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
 if app.secret_key == secrets.token_hex(16):
     logging.warning("FLASK_SECRET_KEY not set, using temporary secret key. Sessions may not persist across restarts.")
@@ -31,14 +31,16 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY environment variable is not set!")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash-001")  # Use a specific model version
+model = genai.GenerativeModel("gemini-1.5-flash-001")
 
-# Define the initial system prompt
+# Initial system instruction and first response
 SYSTEM_PROMPT = {
-    "role": "user", 
-    "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
-              "Always respond in a clear, concise, cool, and friendly manner. "
-              "Keep your responses informative but simple, avoiding unnecessary complexity."]
+    "role": "user",
+    "parts": [
+        "You are PyBot, a helpful assistant developed by PyGuy. "
+        "Always respond in a clear, concise, cool, and friendly manner. "
+        "Keep your responses informative but simple, avoiding unnecessary complexity."
+    ]
 }
 
 INITIAL_MODEL_RESPONSE = {
@@ -48,8 +50,8 @@ INITIAL_MODEL_RESPONSE = {
 
 @app.route("/")
 def home():
-    session['ping'] = 'pong'  # Set a value
-    logging.info(f"Home route accessed. Session ID: {session.sid if session else 'No Session'}")
+    session['ping'] = 'pong'
+    logging.info("Home route accessed.")
     return "PyBot is running. Check /chat endpoint."
 
 @app.route("/ping")
@@ -58,66 +60,48 @@ def ping():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    logging.info(f"Chat request received. Session ID: {session.sid if session else 'No Session'}")
-
     data = request.get_json()
     if not data or "message" not in data:
-        logging.warning("Chat request missing 'message' field.")
-        return jsonify({"reply": "Request body must be JSON with a 'message' field."}), 400
+        return jsonify({"reply": "⚠︎ Request must contain a 'message' field."}), 400
 
-    message = data["message"].strip()
-    if not message:
-        logging.warning("Chat request received empty 'message'.")
-        return jsonify({"reply": "Please enter a non-empty message!"}), 400
+    user_message = data["message"].strip()
+    if not user_message:
+        return jsonify({"reply": "⚠︎ Please enter a non-empty message!"}), 400
 
-    # --- Session History Management ---
-    if "history" not in session:
-        logging.info(f"New session ({session.sid}): Initializing chat history.")
+    # Initialize chat history if not already present
+    if "history" not in session or not isinstance(session["history"], list):
         session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
-    else:
-        if not isinstance(session["history"], list):
-            logging.warning(f"Session ({session.sid}): History is not a list. Re-initializing.")
-            session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
 
-    # Append user message
-    session["history"].append({"role": "user", "parts": [message]})
+    # Add user message
+    session["history"].append({"role": "user", "parts": [user_message]})
 
-    # Limit history length
-    MAX_HISTORY_TURNS = 10
-    max_messages = (MAX_HISTORY_TURNS * 2) + len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
-    if len(session["history"]) > max_messages:
-        logging.info(f"Session ({session.sid}): History limit reached. Trimming history.")
-        session["history"] = session["history"][:len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])] + session["history"][-MAX_HISTORY_TURNS*2:]
+    # Limit history to last 10 turns (+2 system messages)
+    MAX_TURNS = 10
+    base_len = len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
+    if len(session["history"]) > base_len + MAX_TURNS * 2:
+        session["history"] = session["history"][:base_len] + session["history"][-MAX_TURNS * 2:]
 
-    # --- Call Gemini API ---
     try:
-        logging.info(f"Session ({session.sid}): Sending history to Gemini (length: {len(session['history'])} messages)")
-
-        # Directly send session history to Gemini
         response = model.generate_content(contents=session["history"])
 
-        # --- Process Response ---
         if not response.parts:
-            if response.prompt_feedback.block_reason:
-                block_reason = response.prompt_feedback.block_reason.name
-                logging.warning(f"Session ({session.sid}): Gemini request blocked. Reason: {block_reason}")
-                reply = f"?? My response was blocked due to safety settings ({block_reason}). Please rephrase your message."
+            if response.prompt_feedback and response.prompt_feedback.block_reason:
+                reason = response.prompt_feedback.block_reason.name
+                reply = f"⚠︎ My response was blocked due to safety settings ({reason}). Try rephrasing your message."
             else:
-                logging.error(f"Session ({session.sid}): Gemini returned no parts and no block reason.")
-                reply = "?? I received an empty response from the AI. Please try again."
+                reply = "⚠︎ I received an empty response. Please try again."
         else:
             reply = response.text.strip()
 
-        # --- Append Model Response and Save Session ---
+        # Save response to session
         session["history"].append({"role": "model", "parts": [reply]})
         session.modified = True
 
-        logging.info(f"Session ({session.sid}): Successfully generated reply.")
         return jsonify({"reply": reply})
 
     except Exception as e:
-        logging.error(f"Session ({session.sid}): Error during Gemini API call: {str(e)}", exc_info=True)
-        return jsonify({"reply": f"?? Error communicating with the AI service. Please try again later."}), 500
+        logging.error(f"Gemini API Error: {str(e)}", exc_info=True)
+        return jsonify({"reply": "⚠︎ Error communicating with the AI service. Please try again later."}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
