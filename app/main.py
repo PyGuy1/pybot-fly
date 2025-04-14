@@ -5,6 +5,7 @@ import google.generativeai as genai
 import os
 import secrets
 import logging
+from datetime import datetime
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -41,13 +42,23 @@ SYSTEM_PROMPT = {
     "role": "user",
     "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
               "Always respond in a clear, concise, cool, and friendly manner. "
-              "Keep your responses informative but simple, avoiding unnecessary complexity."]
+              "Keep your responses informative but simple, avoiding unnecessary complexity. "
+              "Use real-time info when necessary (like date/time/weather/news) via web or Python."]
 }
 
 INITIAL_MODEL_RESPONSE = {
     "role": "model",
     "parts": ["Okay, I understand. I'm PyBot, ready to help! How can I assist you today?"]
 }
+
+# --- Helper: Real-time Answering Logic ---
+def maybe_handle_realtime_request(message):
+    message = message.lower()
+    if "time" in message:
+        return datetime.now().strftime("It's %I:%M %p right now.")
+    elif "date" in message:
+        return datetime.now().strftime("Today is %A, %B %d, %Y.")
+    return None
 
 # --- Routes ---
 @app.route("/")
@@ -68,6 +79,11 @@ def chat():
     message = data["message"].strip()
     if not message:
         return jsonify({"reply": "⚠︎ Message cannot be empty."}), 400
+
+    # Check for real-time requests (date, time)
+    realtime_reply = maybe_handle_realtime_request(message)
+    if realtime_reply:
+        return jsonify({"reply": realtime_reply})
 
     # --- Initialize Session History ---
     if "history" not in session or not isinstance(session["history"], list):
