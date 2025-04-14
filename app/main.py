@@ -1,118 +1,58 @@
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
-from flask_session import Session
-import google.generativeai as genai
 import os
 import secrets
-import logging
 
-# --- Logging Setup ---
-logging.basicConfig(level=logging.INFO)
-
-# --- Flask App Setup ---
 app = Flask(__name__)
-CORS(app, supports_credentials=True)  # Important for session cookies to work with frontend
+CORS(app)
 
-# --- Session Configuration ---
-instance_path = os.path.join(app.instance_path, 'flask_session')
-os.makedirs(instance_path, exist_ok=True)
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_FILE_DIR"] = instance_path
-app.config["SESSION_PERMANENT"] = True
-
-# Secret key setup
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
-if app.secret_key == secrets.token_hex(16):
-    logging.warning("FLASK_SECRET_KEY not set, using temporary key. Sessions may not persist across restarts.")
-
-Session(app)
-
-# --- Gemini API Setup ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set!")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
-
-# --- System Prompt ---
-SYSTEM_PROMPT = {
-    "role": "user",
-    "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
-              "Always respond in a clear, concise, cool, and friendly manner. "
-              "Keep your responses informative but simple, avoiding unnecessary complexity."]
-}
-INITIAL_MODEL_RESPONSE = {
-    "role": "model",
-    "parts": ["Okay, I understand. I'm PyBot, ready to help! How can I assist you today?"]
-}
-
-# --- Routes ---
-
-@app.route("/")
-def home():
-    session['ping'] = 'pong'
-    logging.info(f"Home route accessed. Session: {session.get('ping')}")
-    return "PyBot is running. Check /chat endpoint."
-
-@app.route("/ping")
-def ping():
-    return "pong"
-
-@app.route("/reset", methods=["POST"])
-def reset():
-    session.clear()
-    logging.info("Session reset triggered.")
-    return jsonify({"status": "cleared"})
+# Automatically generate a secret key if not set
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(16)
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    logging.info("Chat request received.")
     data = request.get_json()
+    user_message = data.get("message", "").strip()
 
-    if not data or "message" not in data:
-        return jsonify({"reply": "⚠️ Request body must be JSON with a 'message' field."}), 400
+    if not user_message:
+        return jsonify({"reply": "⚠︎ Please send a valid message."})
 
-    message = data["message"].strip()
-    if not message:
-        return jsonify({"reply": "⚠️ Please enter a non-empty message!"}), 400
+    # Get or initialize conversation history
+    history = session.get("history", [])
 
-    # --- Initialize session history ---
-    if "history" not in session or not isinstance(session["history"], list):
-        session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
+    # Add user message
+    history.append({"role": "user", "content": user_message})
 
-    session["history"].append({"role": "user", "parts": [message]})
+    # Generate PyBot reply
+    reply = generate_reply(history)
 
-    # --- Trim old messages (optional) ---
-    MAX_HISTORY_TURNS = 10
-    max_messages = (MAX_HISTORY_TURNS * 2) + 2
-    if len(session["history"]) > max_messages:
-        session["history"] = session["history"][:2] + session["history"][-MAX_HISTORY_TURNS * 2:]
+    # Add bot reply to history
+    history.append({"role": "assistant", "content": reply})
+    session["history"] = history  # Update session
 
-    try:
-        # --- Call Gemini ---
-        logging.info(f"Sending {len(session['history'])} messages to Gemini.")
-        response = model.generate_content(contents=session["history"])
+    return jsonify({"reply": reply})
 
-        if not response.parts:
-            if response.prompt_feedback.block_reason:
-                reason = response.prompt_feedback.block_reason.name
-                reply = f"⚠️ My response was blocked due to safety settings ({reason}). Please rephrase your message."
-            else:
-                reply = "⚠️ I received an empty response from the AI. Please try again."
-        else:
-            reply = response.text.strip()
 
-        # --- Save reply to session ---
-        session["history"].append({"role": "model", "parts": [reply]})
-        session.modified = True
+def generate_reply(history):
+    """
+    Simple logic for generating replies based on history.
+    Replace this with actual LLM calls if needed.
+    """
+    last_user_message = history[-1]["content"].lower()
 
-        return jsonify({"reply": reply})
+    if "hello" in last_user_message or "hi" in last_user_message:
+        return "Hey there! I'm PyBot 🤖. How can I assist you today?"
+    elif "who made you" in last_user_message:
+        return "I was created by **PyGuy**, my awesome developer! 🚀"
+    elif "clear" in last_user_message:
+        session.pop("history", None)
+        return "🧹 Chat history cleared. Let's start fresh!"
+    else:
+        return "I'm PyBot, your terminal-style assistant. I may not be super smart yet, but I’m here to help! 🔧"
 
-    except Exception as e:
-        logging.exception("Error during Gemini API call.")
-        return jsonify({"reply": "⚠️ Error communicating with the AI service. Please try again later."}), 500
+@app.route("/")
+def index():
+    return jsonify({"message": "PyBot backend is running."})
 
-# --- Start Server ---
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(debug=True)
