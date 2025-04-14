@@ -46,24 +46,6 @@ INITIAL_MODEL_RESPONSE = {
     "parts": ["Okay, I understand. I'm PyBot, ready to help! How can I assist you today?"]
 }
 
-# --- Context Caching Configuration ---
-def create_cache(contents):
-    try:
-        # Create a cache with a TTL of 5 minutes
-        cache = genai.Caches.create(
-            model=model.model_name,
-            config=genai.types.CreateCachedContentConfig(
-                display_name="PyBot Cache",  # Name the cache for identification
-                system_instruction="You are an assistant capable of handling various requests.",
-                contents=contents,
-                ttl="300s",  # Cache for 5 minutes
-            )
-        )
-        return cache
-    except Exception as e:
-        logging.error(f"Error creating cache: {e}")
-        return None
-
 @app.route("/")
 def home():
     session['ping'] = 'pong'  # Set a value
@@ -111,15 +93,8 @@ def chat():
     try:
         logging.info(f"Session ({session.sid}): Sending history to Gemini (length: {len(session['history'])} messages)")
 
-        # Create a cache of the current history for reuse
-        cache = create_cache(session["history"])
-        if cache:
-            response = model.generate_content(
-                contents=session["history"],
-                config=genai.types.GenerateContentConfig(cached_content=cache.name)
-            )
-        else:
-            response = model.generate_content(contents=session["history"])
+        # Directly send session history to Gemini
+        response = model.generate_content(contents=session["history"])
 
         # --- Process Response ---
         if not response.parts:
