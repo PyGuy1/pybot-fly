@@ -89,7 +89,7 @@ def chat():
     history_text = "\n".join(conversation) + "\nPyBot:"
 
     try:
-        response = model.generate_content(history_text)
+        response = model.generate_content(contents=session["history"])
 
         if not response.parts:
             logging.warning(f"Session ({session.sid}): Gemini returned no parts.")
