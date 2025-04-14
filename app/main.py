@@ -5,42 +5,43 @@ import google.generativeai as genai
 import os
 import secrets
 import logging
-import time
 
-# Set up logging
+# --- Logging Setup ---
 logging.basicConfig(level=logging.INFO)
 
+# --- Flask App Initialization ---
 app = Flask(__name__)
-CORS(app, supports_credentials=True)  # Enable cross-origin cookies for session tracking
+CORS(app, supports_credentials=True)  # Allow frontend to send cookies
 
 # --- Session Configuration ---
 instance_path = os.path.join(app.instance_path, 'flask_session')
 os.makedirs(instance_path, exist_ok=True)
+
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = instance_path
 app.config["SESSION_PERMANENT"] = True
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
+
+# Warn if using a temporary secret key
 if app.secret_key == secrets.token_hex(16):
-    logging.warning("FLASK_SECRET_KEY not set, using temporary secret key. Sessions may not persist across restarts.")
+    logging.warning("⚠︎ FLASK_SECRET_KEY not set. Using a temporary key. Sessions won't persist after restart.")
 
 Session(app)
 
-# --- Gemini API Configuration ---
+# --- Gemini API Setup ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set!")
+    raise ValueError("⚠︎ GEMINI_API_KEY environment variable is not set.")
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash-001")
 
-# Initial system instruction and first response
+# --- System Instructions ---
 SYSTEM_PROMPT = {
     "role": "user",
-    "parts": [
-        "You are PyBot, a helpful assistant developed by PyGuy. "
-        "Always respond in a clear, concise, cool, and friendly manner. "
-        "Keep your responses informative but simple, avoiding unnecessary complexity."
-    ]
+    "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
+              "Always respond in a clear, concise, cool, and friendly manner. "
+              "Keep your responses informative but simple, avoiding unnecessary complexity."]
 }
 
 INITIAL_MODEL_RESPONSE = {
@@ -48,11 +49,11 @@ INITIAL_MODEL_RESPONSE = {
     "parts": ["Okay, I understand. I'm PyBot, ready to help! How can I assist you today?"]
 }
 
+# --- Routes ---
 @app.route("/")
 def home():
     session['ping'] = 'pong'
-    logging.info("Home route accessed.")
-    return "PyBot is running. Check /chat endpoint."
+    return "✅ PyBot is running. Use /chat to interact."
 
 @app.route("/ping")
 def ping():
@@ -64,44 +65,43 @@ def chat():
     if not data or "message" not in data:
         return jsonify({"reply": "⚠︎ Request must contain a 'message' field."}), 400
 
-    user_message = data["message"].strip()
-    if not user_message:
-        return jsonify({"reply": "⚠︎ Please enter a non-empty message!"}), 400
+    message = data["message"].strip()
+    if not message:
+        return jsonify({"reply": "⚠︎ Message cannot be empty."}), 400
 
-    # Initialize chat history if not already present
+    # --- Initialize Session History ---
     if "history" not in session or not isinstance(session["history"], list):
         session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
 
-    # Add user message
-    session["history"].append({"role": "user", "parts": [user_message]})
+    # Append user's message
+    session["history"].append({"role": "user", "parts": [message]})
 
-    # Limit history to last 10 turns (+2 system messages)
+    # Limit history length
     MAX_TURNS = 10
-    base_len = len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
-    if len(session["history"]) > base_len + MAX_TURNS * 2:
-        session["history"] = session["history"][:base_len] + session["history"][-MAX_TURNS * 2:]
+    preserved = len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
+    if len(session["history"]) > preserved + MAX_TURNS * 2:
+        session["history"] = session["history"][:preserved] + session["history"][-MAX_TURNS * 2:]
 
+    # --- Generate Gemini Response ---
     try:
         response = model.generate_content(contents=session["history"])
 
         if not response.parts:
-            if response.prompt_feedback and response.prompt_feedback.block_reason:
+            if hasattr(response, "prompt_feedback") and response.prompt_feedback.block_reason:
                 reason = response.prompt_feedback.block_reason.name
-                reply = f"⚠︎ My response was blocked due to safety settings ({reason}). Try rephrasing your message."
-            else:
-                reply = "⚠︎ I received an empty response. Please try again."
-        else:
-            reply = response.text.strip()
+                return jsonify({"reply": f"⚠︎ Response blocked by safety settings: {reason}."}), 200
+            return jsonify({"reply": "⚠︎ Got an empty response. Try again."}), 200
 
-        # Save response to session
+        reply = response.text.strip()
         session["history"].append({"role": "model", "parts": [reply]})
         session.modified = True
 
         return jsonify({"reply": reply})
 
     except Exception as e:
-        logging.error(f"Gemini API Error: {str(e)}", exc_info=True)
-        return jsonify({"reply": "⚠︎ Error communicating with the AI service. Please try again later."}), 500
+        logging.exception("Gemini API error:")
+        return jsonify({"reply": "⚠︎ Something went wrong with the AI service. Try again later."}), 500
 
+# --- Run App ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
