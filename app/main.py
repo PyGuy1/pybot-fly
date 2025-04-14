@@ -64,29 +64,37 @@ def chat():
     if "history" not in session:
         logging.info(f"New session ({session.sid}): Initializing chat history.")
         session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
-    else:
-        if not isinstance(session["history"], list):
-            logging.warning(f"Session ({session.sid}): History is not a list. Re-initializing.")
-            session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
+    elif not isinstance(session["history"], list):
+        logging.warning(f"Session ({session.sid}): History is not a list. Re-initializing.")
+        session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
 
-    # Add user message to history
+    # Add the new user message
     session["history"].append({"role": "user", "parts": [message]})
 
-    # Optional: Limit History Length to avoid exceeding context limits
+    # Limit conversation length
     MAX_HISTORY_TURNS = 10
     max_messages = (MAX_HISTORY_TURNS * 2) + len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
     if len(session["history"]) > max_messages:
         logging.info(f"Session ({session.sid}): History limit reached. Trimming history.")
         session["history"] = session["history"][:len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])] + session["history"][-MAX_HISTORY_TURNS * 2:]
 
-    # Call Gemini API with conversation history
+    # Flatten history into plain text
+    history_text = ""
+    for msg in session["history"]:
+        role = msg["role"]
+        content = " ".join(msg["parts"])
+        if role == "user":
+            history_text += f"You: {content}\n"
+        elif role == "model":
+            history_text += f"PyBot: {content}\n"
+
     try:
-        response = model.generate_content(contents=session["history"])
+        response = model.generate_content(history_text)
 
         if not response.parts:
             logging.warning(f"Session ({session.sid}): Gemini returned no parts.")
             return jsonify({"reply": "⚠️ I received an empty response from the AI. Please try again."}), 500
-        
+
         reply = response.text.strip()
         session["history"].append({"role": "model", "parts": [reply]})
         session.modified = True
@@ -96,7 +104,7 @@ def chat():
 
     except Exception as e:
         logging.error(f"Session ({session.sid}): Error during Gemini API call: {str(e)}", exc_info=True)
-        return jsonify({"reply": f"⚠️ Error communicating with the AI service. Please try again later."}), 500
+        return jsonify({"reply": "⚠️ Error communicating with the AI service. Please try again later."}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
