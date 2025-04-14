@@ -10,7 +10,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)  # CORS configuration
+CORS(app, supports_credentials=True)
 
 # Session Configuration
 instance_path = os.path.join(app.instance_path, 'flask_session')
@@ -22,7 +22,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(16))
 if app.secret_key == secrets.token_hex(16):
     logging.warning("FLASK_SECRET_KEY not set, using temporary secret key. Sessions may not persist across restarts.")
 
-Session(app)  # Initialize Flask-Session
+Session(app)
 
 # Gemini API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -32,15 +32,13 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-# Define the initial system prompt
+# Initial prompts
 SYSTEM_PROMPT = {
     "role": "user",
     "parts": ["You are PyBot, a helpful assistant developed by PyGuy. "
               "Always respond in a clear, concise, cool, and friendly manner. "
               "Keep your responses informative but simple, avoiding unnecessary complexity."]
 }
-
-# Define the first model response
 INITIAL_MODEL_RESPONSE = {
     "role": "model",
     "parts": ["Okay, I understand. I'm PyBot, ready to help! How can I assist you today?"]
@@ -60,7 +58,7 @@ def chat():
         logging.warning("Chat request received empty 'message'.")
         return jsonify({"reply": "Please enter a non-empty message!"}), 400
 
-    # Initialize conversation history if it doesn't exist
+    # Initialize or validate history
     if "history" not in session:
         logging.info(f"New session ({session.sid}): Initializing chat history.")
         session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
@@ -68,25 +66,27 @@ def chat():
         logging.warning(f"Session ({session.sid}): History is not a list. Re-initializing.")
         session["history"] = [SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE]
 
-    # Add the new user message
+    # Add user message
     session["history"].append({"role": "user", "parts": [message]})
 
     # Limit conversation length
     MAX_HISTORY_TURNS = 10
-    max_messages = (MAX_HISTORY_TURNS * 2) + len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])
+    max_messages = (MAX_HISTORY_TURNS * 2) + 2  # +2 for SYSTEM_PROMPT and INITIAL_MODEL_RESPONSE
     if len(session["history"]) > max_messages:
-        logging.info(f"Session ({session.sid}): History limit reached. Trimming history.")
-        session["history"] = session["history"][:len([SYSTEM_PROMPT, INITIAL_MODEL_RESPONSE])] + session["history"][-MAX_HISTORY_TURNS * 2:]
+        session["history"] = session["history"][:2] + session["history"][-MAX_HISTORY_TURNS * 2:]
 
-    # Flatten history into plain text
-    history_text = ""
+    # Flatten conversation for Gemini input
+    conversation = []
     for msg in session["history"]:
         role = msg["role"]
         content = " ".join(msg["parts"])
         if role == "user":
-            history_text += f"You: {content}\n"
+            conversation.append(f"User: {content}")
         elif role == "model":
-            history_text += f"PyBot: {content}\n"
+            conversation.append(f"PyBot: {content}")
+
+    # Add "PyBot:" as the next expected response
+    history_text = "\n".join(conversation) + "\nPyBot:"
 
     try:
         response = model.generate_content(history_text)
