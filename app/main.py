@@ -54,10 +54,20 @@ def search_web(query):
         url = f"https://www.google.com/search?q={query}"
         headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, "html.parser")
+        soup = BeautifulSoup(res.text, 'html.parser')
+
+        # Try multiple ways to get the data
         result = soup.find("div", class_="BNeawe").text
-        return result
-    except:
+        if result:
+            return result
+
+        alt = soup.find("div", class_="BNeawe iBp4i AP7Wnd")
+        if alt:
+            return alt.text
+
+        return None
+    except Exception as e:
+        print("Search error:", e)
         return None
 
 @app.route("/chat", methods=["POST"])
