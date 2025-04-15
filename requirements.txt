@@ -3,3 +3,6 @@ Flask-Cors
 Flask-Session
 google-generativeai
 duckduckgo-search
+pytz
+requests
+beautifulsoup4
